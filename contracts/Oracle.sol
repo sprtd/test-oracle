@@ -57,6 +57,7 @@ contract Oracle {
   
   // Event fired each time an oracle submits a response
   event LogFlightStatusInfo(string flight, uint256 timestamp, uint8 delayStatus, bool verified);
+  event LogOracleRequest(uint8 index, string flight, uint256 timestamp);
 
 
   /**********************************************************************/
@@ -71,6 +72,10 @@ contract Oracle {
   constructor() {
     contractOwner = msg.sender;
   }
+  
+  /**********************************************************************/
+  /*                    CORE                            */
+  /**********************************************************************/
 
 
   function registerOracle() external payable {
@@ -79,7 +84,7 @@ contract Oracle {
     oracles[msg.sender] = indexes;
   }
 
-
+  
   function generateIndexes(address _account) internal returns(uint8[3] memory) {
     uint8[3] memory indexes;
     indexes[0] = getRandomIndex(_account);
@@ -114,9 +119,51 @@ contract Oracle {
   }
 
 
+    // generate a request
+  function fetchFlightStatus(string memory _flight, uint256 _timestamp) external {
+    // generate  a number between  0-9  to determine  which oracles may respond
+
+    uint8 index = getRandomIndex(msg.sender);
+       
+    // generate a unique key for storing  the request
+    bytes32 key = keccak256(abi.encodePacked(index, _flight, _timestamp));
+ 
+    oracleResponses[key].requester = msg.sender;
+    oracleResponses[key].isOpen = true;  
+    emit LogOracleRequest(index, _flight, _timestamp);
+
+  }
+
+  function submitOracleResponse (uint8 _index, string memory _flight, uint256 _timestamp, uint8 _statusId)  external {
+    require((oracles[msg.sender][0]) == _index || (oracles[msg.sender][1] == _index || (oracles[msg.sender][2]) == _index ));
+
+    bytes32 key  = keccak256(abi.encodePacked(_index, _flight, _timestamp));
+    require(oracleResponses[key].isOpen, 'flight or timestamp do not match oracle request');
+
+    oracleResponses[key].responses[_statusId].push(msg.sender);
+
+    if(oracleResponses[key].responses[_statusId].length >= MIN_RESPONSES) {
+      emit LogFlightStatusInfo(_flight, _timestamp, _statusId, true);
+      bytes32  flightKey = keccak256(abi.encodePacked(_flight, _timestamp));
+      flights[flightKey] = FlightStatus({
+        hasStatus: true,
+        status: _statusId
+      });
+      
+    } else {
+      emit LogFlightStatusInfo(_flight, _timestamp, _statusId, false);
+    }
+    
+  }
+
+  
+
+
+
   function getOracle(address _account) public view onlyOwner returns(uint8[3] memory) {
     return oracles[_account];
   }
+
 
 
 
